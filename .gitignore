@@ -1,0 +1,4 @@
+discord-music-bot/node_modules/*
+discord-music-bot/.env
+discord-music-bot/dist/*
+
