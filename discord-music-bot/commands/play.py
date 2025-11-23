@@ -4,6 +4,7 @@ from typing import List
 import discord
 from commands.base_command import Command
 from music_service import music_service
+from music_controls import MusicControlView  # Import only the class
 
 
 class PlayCommand(Command):
@@ -11,9 +12,18 @@ class PlayCommand(Command):
     
     def __init__(self):
         super().__init__("play", "Plays a song from YouTube")
-    
+        self.music_control_view = None  # Initialize as None
+
+    def set_music_control_view(self, view: MusicControlView):
+        """Set the MusicControlView instance."""
+        self.music_control_view = view
+
     async def execute(self, message: discord.Message, args: List[str]) -> None:
         """Execute the play command."""
+        if not self.music_control_view:
+            await message.reply("Music control view is not initialized!")
+            return
+        
         if not args:
             await message.reply("Please provide a song name or URL!")
             return
@@ -67,11 +77,13 @@ class PlayCommand(Command):
                 # Send confirmation message
                 if queue_length == 0:
                     await search_msg.edit(
-                        content=f"🎵 Now playing playlist with **{len(songs)}** songs!\nStarting with: **{songs[0].title}**\nRequested by: {message.author.name}"
+                        content=f"🎵 Now playing playlist with **{len(songs)}** songs!\nStarting with: **{songs[0].title}**\nRequested by: {message.author.name}",
+                        view=self.music_control_view
                     )
                 else:
                     await search_msg.edit(
-                        content=f"✅ Added **{len(songs)}** songs from playlist to queue!\nRequested by: {message.author.name}"
+                        content=f"✅ Added **{len(songs)}** songs from playlist to queue!\nRequested by: {message.author.name}",
+                        view=self.music_control_view
                     )
             else:
                 # Single song logic (existing code)
@@ -102,11 +114,13 @@ class PlayCommand(Command):
                 # Send appropriate message
                 if queue_length == 0:
                     await search_msg.edit(
-                        content=f"🎵 Now playing: **{song.title}** [{song.duration}]\nRequested by: {song.requested_by}"
+                        content=f"🎵 Now playing: **{song.title}** [{song.duration}]\nRequested by: {song.requested_by}",
+                        view=self.music_control_view
                     )
                 else:
                     await search_msg.edit(
-                        content=f"✅ Added to queue (Position #{queue_length + 1}): **{song.title}** [{song.duration}]"
+                        content=f"✅ Added to queue (Position #{queue_length + 1}): **{song.title}** [{song.duration}]",
+                        view=self.music_control_view
                     )
                 
         except Exception as e:

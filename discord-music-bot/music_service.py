@@ -25,6 +25,8 @@ class GuildQueue:
         self.voice_client = voice_client
         self.is_playing = False
         self.current_song: Optional[Song] = None
+        self.is_paused = False
+        self.history: List[Song] = []  # Track previous songs
 
 
 class MusicService:
@@ -285,6 +287,13 @@ class MusicService:
         if not queue:
             return
         
+        # Add current song to history before removing
+        if queue.songs and queue.current_song:
+            queue.history.append(queue.current_song)
+            # Keep only last 10 songs in history
+            if len(queue.history) > 10:
+                queue.history.pop(0)
+        
         # Remove the current song
         if queue.songs:
             queue.songs.pop(0)
@@ -317,6 +326,106 @@ class MusicService:
             return True
         
         return False
+    
+    def pause(self, guild_id: int) -> bool:
+        """
+        Pause the current song.
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            True if paused, False if nothing was playing
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue or not queue.is_playing:
+            return False
+        
+        if queue.voice_client.is_playing() and not queue.is_paused:
+            queue.voice_client.pause()
+            queue.is_paused = True
+            return True
+        
+        return False
+    
+    def resume(self, guild_id: int) -> bool:
+        """
+        Resume the current song.
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            True if resumed, False if nothing was paused
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue or not queue.is_playing:
+            return False
+        
+        if queue.voice_client.is_paused() and queue.is_paused:
+            queue.voice_client.resume()
+            queue.is_paused = False
+            return True
+        
+        return False
+    
+    async def previous(self, guild_id: int) -> bool:
+        """
+        Go back to the previous song.
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            True if went to previous song, False if no history
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue or not queue.history:
+            return False
+        
+        # Get the last song from history
+        previous_song = queue.history.pop()
+        
+        # Add current song back to front of queue if exists
+        if queue.current_song:
+            queue.songs.insert(0, queue.current_song)
+        
+        # Add previous song to front of queue
+        queue.songs.insert(0, previous_song)
+        
+        # Stop current playback to trigger next song
+        if queue.voice_client.is_playing() or queue.voice_client.is_paused():
+            queue.voice_client.stop()
+        else:
+            # If nothing is playing, start playing
+            await self._play_song(guild_id)
+        
+        return True
+    
+    def clear_queue(self, guild_id: int) -> int:
+        """
+        Clear the entire queue (except current song).
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            Number of songs removed from queue
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue:
+            return 0
+        
+        # Keep only the first song (currently playing)
+        queue_length = len(queue.songs) - 1
+        if queue_length > 0:
+            queue.songs = queue.songs[:1]
+        
+        return max(0, queue_length)
     
     def get_queue(self, guild_id: int) -> List[Song]:
         """

@@ -5,6 +5,8 @@ import discord
 from discord.ext import commands as discord_commands
 from dotenv import load_dotenv
 from commands.command_handler import register_commands, get_command, PREFIX
+from music_controls import MusicControlView  # Import the class, not the instance
+from commands.play import PlayCommand
 
 # Load environment variables
 load_dotenv()
@@ -18,10 +20,20 @@ intents.guilds = True
 # Create bot instance
 bot = discord_commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
 
+music_control_view = None  # Declare the view globally but don't instantiate it yet
 
 @bot.event
 async def on_ready():
     """Event handler for when the bot is ready."""
+    global music_control_view
+    music_control_view = MusicControlView()  # Instantiate the view here
+    bot.add_view(music_control_view)  # Register the persistent view
+
+    # Pass the music_control_view instance to the PlayCommand
+    play_command = get_command("play")
+    if isinstance(play_command, PlayCommand):
+        play_command.set_music_control_view(music_control_view)
+
     print(f"✅ Bot is online as {bot.user.name} (ID: {bot.user.id})")
     print(f"Command prefix: {PREFIX}")
     print("------")
