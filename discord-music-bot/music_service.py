@@ -1,7 +1,10 @@
 """Music service for Discord bot - handles YouTube playback and queue management."""
 
 import asyncio
-from typing import Optional, Dict, List
+import random
+import time
+from typing import Optional, Dict, List, Tuple
+from functools import lru_cache
 import discord
 from discord import FFmpegPCMAudio
 import yt_dlp
@@ -10,11 +13,14 @@ import yt_dlp
 class Song:
     """Represents a song in the queue."""
     
-    def __init__(self, title: str, url: str, duration: str, requested_by: Optional[str] = None):
+    def __init__(self, title: str, url: str, duration: str, duration_seconds: int = 0, requested_by: Optional[str] = None, thumbnail: Optional[str] = None):
         self.title = title
         self.url = url  # This is the YouTube webpage URL
         self.duration = duration
+        self.duration_seconds = duration_seconds
         self.requested_by = requested_by
+        self.thumbnail = thumbnail
+        self.start_time: Optional[float] = None  # Track when song started playing
 
 
 class GuildQueue:
@@ -28,6 +34,8 @@ class GuildQueue:
         self.is_paused = False
         self.history: List[Song] = []  # Track previous songs
         self.last_control_message: Optional[discord.Message] = None  # Track last message with buttons
+        self.loop_mode: str = "off"  # "off", "song", or "queue"
+        self.ffmpeg_process = None  # Track FFmpeg process
 
 
 class MusicService:
@@ -35,6 +43,8 @@ class MusicService:
     
     def __init__(self):
         self.queues: Dict[int, GuildQueue] = {}
+        self._metadata_cache: Dict[str, Tuple[dict, float]] = {}  # url -> (metadata, timestamp)
+        self._cache_ttl = 3600  # Cache for 1 hour
         
         # yt-dlp options for streaming (no download)
         self.ydl_opts = {
@@ -67,6 +77,26 @@ class MusicService:
             'options': '-vn -b:a 128k'  # Set audio bitrate for consistent streaming
         }
     
+    def _get_cached_metadata(self, url: str) -> Optional[dict]:
+        """Get cached metadata if available and not expired."""
+        if url in self._metadata_cache:
+            metadata, timestamp = self._metadata_cache[url]
+            if time.time() - timestamp < self._cache_ttl:
+                print(f"Using cached metadata for: {url}")
+                return metadata
+            else:
+                # Remove expired cache
+                del self._metadata_cache[url]
+        return None
+    
+    def _cache_metadata(self, url: str, metadata: dict) -> None:
+        """Cache metadata for a URL."""
+        self._metadata_cache[url] = (metadata, time.time())
+        # Clean up old cache entries (keep only last 100)
+        if len(self._metadata_cache) > 100:
+            oldest = min(self._metadata_cache.items(), key=lambda x: x[1][1])
+            del self._metadata_cache[oldest[0]]
+    
     async def search_youtube(self, query: str) -> Optional[Song]:
         """
         Search YouTube for a video or get info from URL.
@@ -78,6 +108,18 @@ class MusicService:
             Song object if found, None otherwise
         """
         try:
+            # Check cache first for direct URLs
+            if query.startswith('http'):
+                cached = self._get_cached_metadata(query)
+                if cached:
+                    return Song(
+                        title=cached['title'],
+                        url=cached['webpage_url'],
+                        duration=self._format_duration(cached.get('duration', 0)),
+                        duration_seconds=cached.get('duration', 0),
+                        thumbnail=cached.get('thumbnail')
+                    )
+            
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
                 # Extract info without downloading
                 info = await asyncio.to_thread(
@@ -93,6 +135,9 @@ class MusicService:
                         return None
                     info = info['entries'][0]
                 
+                # Cache the metadata
+                self._cache_metadata(info['webpage_url'], info)
+                
                 # Format duration
                 duration_sec = info.get('duration', 0)
                 duration = self._format_duration(duration_sec)
@@ -104,7 +149,9 @@ class MusicService:
                 return Song(
                     title=info['title'],
                     url=info['webpage_url'],
-                    duration=duration
+                    duration=duration,
+                    duration_seconds=duration_sec,
+                    thumbnail=info.get('thumbnail')
                 )
                 
         except Exception as e:
@@ -161,7 +208,9 @@ class MusicService:
                     song = Song(
                         title=entry.get('title', 'Unknown Title'),
                         url=video_url,
-                        duration=duration
+                        duration=duration,
+                        duration_seconds=duration_sec,
+                        thumbnail=entry.get('thumbnail')
                     )
                     songs.append(song)
                 
@@ -191,6 +240,20 @@ class MusicService:
         except Exception as e:
             print(f"Error getting stream URL: {e}")
             return None
+    
+    def _cleanup_ffmpeg(self, guild_id: int) -> None:
+        """Clean up FFmpeg process for a guild."""
+        queue = self.queues.get(guild_id)
+        if queue and queue.ffmpeg_process:
+            try:
+                if queue.ffmpeg_process.poll() is None:  # Process is still running
+                    queue.ffmpeg_process.terminate()
+                    queue.ffmpeg_process.wait(timeout=2)
+                    print(f"Cleaned up FFmpeg process for guild {guild_id}")
+            except Exception as e:
+                print(f"Error cleaning up FFmpeg: {e}")
+            finally:
+                queue.ffmpeg_process = None
     
     async def add_to_queue(self, guild_id: int, song: Song, voice_client: discord.VoiceClient) -> None:
         """
@@ -242,11 +305,16 @@ class MusicService:
         if not queue or not queue.songs:
             if queue:
                 queue.is_playing = False
+                self._cleanup_ffmpeg(guild_id)
             return
+        
+        # Clean up any existing FFmpeg process
+        self._cleanup_ffmpeg(guild_id)
         
         song = queue.songs[0]
         queue.current_song = song
         queue.is_playing = True
+        song.start_time = time.time()  # Record start time
         
         try:
             print(f"Streaming song: {song.title}")
@@ -263,10 +331,16 @@ class MusicService:
             # Create audio source that streams directly
             source = FFmpegPCMAudio(stream_url, **self.ffmpeg_options)
             
+            # Store FFmpeg process reference
+            if hasattr(source, '_process'):
+                queue.ffmpeg_process = source._process
+            
             # Play the audio
             def after_playing(error):
                 if error:
                     print(f"Error playing song: {error}")
+                # Clean up FFmpeg
+                self._cleanup_ffmpeg(guild_id)
                 # Schedule the next song
                 asyncio.run_coroutine_threadsafe(self._play_next(guild_id), queue.voice_client.loop)
             
@@ -274,6 +348,7 @@ class MusicService:
             
         except Exception as e:
             print(f"Error playing song: {e}")
+            self._cleanup_ffmpeg(guild_id)
             queue.songs.pop(0)
             await self._play_song(guild_id)
     
@@ -288,7 +363,14 @@ class MusicService:
         if not queue:
             return
         
-        # Add current song to history before removing
+        # Handle loop modes
+        if queue.loop_mode == "song" and queue.current_song:
+            # Don't remove current song, just replay it
+            queue.current_song.start_time = None  # Reset start time
+            await self._play_song(guild_id)
+            return
+        
+        # Add current song to history before removing (if not looping queue)
         if queue.songs and queue.current_song:
             queue.history.append(queue.current_song)
             # Keep only last 10 songs in history
@@ -297,14 +379,89 @@ class MusicService:
         
         # Remove the current song
         if queue.songs:
-            queue.songs.pop(0)
+            removed_song = queue.songs.pop(0)
+            
+            # If looping queue, add song back to end
+            if queue.loop_mode == "queue":
+                queue.songs.append(removed_song)
         
         if not queue.songs:
             queue.is_playing = False
             queue.current_song = None
+            self._cleanup_ffmpeg(guild_id)
             return
         
         await self._play_song(guild_id)
+    
+    def shuffle_queue(self, guild_id: int) -> bool:
+        """
+        Shuffle the queue (keeping currently playing song at front).
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            True if shuffled, False if queue is too small
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue or len(queue.songs) <= 1:
+            return False
+        
+        # Keep first song (currently playing), shuffle the rest
+        current_song = queue.songs[0]
+        remaining_songs = queue.songs[1:]
+        random.shuffle(remaining_songs)
+        queue.songs = [current_song] + remaining_songs
+        
+        return True
+    
+    def set_loop_mode(self, guild_id: int, mode: str) -> bool:
+        """
+        Set the loop mode for a guild.
+        
+        Args:
+            guild_id: ID of the guild
+            mode: "off", "song", or "queue"
+            
+        Returns:
+            True if mode was set, False otherwise
+        """
+        if mode not in ["off", "song", "queue"]:
+            return False
+        
+        queue = self.queues.get(guild_id)
+        if not queue:
+            return False
+        
+        queue.loop_mode = mode
+        return True
+    
+    def get_loop_mode(self, guild_id: int) -> str:
+        """Get the current loop mode for a guild."""
+        queue = self.queues.get(guild_id)
+        return queue.loop_mode if queue else "off"
+    
+    def get_current_position(self, guild_id: int) -> int:
+        """
+        Get current playback position in seconds.
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            Current position in seconds
+        """
+        queue = self.queues.get(guild_id)
+        if not queue or not queue.current_song or not queue.current_song.start_time:
+            return 0
+        
+        if queue.is_paused:
+            # Return position at pause time (would need to track pause time separately for accuracy)
+            return 0
+        
+        elapsed = int(time.time() - queue.current_song.start_time)
+        return min(elapsed, queue.current_song.duration_seconds)
     
     def skip(self, guild_id: int) -> bool:
         """
@@ -449,6 +606,9 @@ class MusicService:
         # Stop playback
         if queue.voice_client.is_playing() or queue.voice_client.is_paused():
             queue.voice_client.stop()
+        
+        # Clean up FFmpeg
+        self._cleanup_ffmpeg(guild_id)
         
         # Clear the queue completely
         queue.songs.clear()

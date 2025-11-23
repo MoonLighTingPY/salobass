@@ -12,11 +12,6 @@ class PlayCommand(Command):
     
     def __init__(self):
         super().__init__("play", "Plays a song from YouTube")
-        self.music_control_view = None
-
-    def set_music_control_view(self, view: MusicControlView):
-        """Set the MusicControlView instance."""
-        self.music_control_view = view
 
     async def _remove_old_buttons(self, guild_id: int):
         """Remove buttons from the previous message."""
@@ -31,10 +26,6 @@ class PlayCommand(Command):
 
     async def execute(self, message: discord.Message, args: List[str]) -> None:
         """Execute the play command."""
-        if not self.music_control_view:
-            await message.reply("Music control view is not initialized!")
-            return
-        
         if not args:
             await message.reply("Please provide a song name or URL!")
             return
@@ -88,11 +79,14 @@ class PlayCommand(Command):
                 # Remove buttons from old message
                 await self._remove_old_buttons(message.guild.id)
                 
+                # Create control view with button states
+                control_view = MusicControlView(guild_id=message.guild.id)
+                
                 # Send confirmation message
                 if queue_length == 0:
                     new_msg = await search_msg.edit(
                         content=f"🎵 Now playing playlist with **{len(songs)}** songs!\nStarting with: **{songs[0].title}**\nRequested by: {message.author.name}",
-                        view=self.music_control_view
+                        view=control_view
                     )
                     # Store the new message with buttons
                     queue = music_service.queues.get(message.guild.id)
@@ -101,7 +95,7 @@ class PlayCommand(Command):
                 else:
                     new_msg = await search_msg.edit(
                         content=f"✅ Added **{len(songs)}** songs from playlist to queue!\nRequested by: {message.author.name}",
-                        view=self.music_control_view
+                        view=control_view
                     )
                     # Store the new message with buttons
                     queue = music_service.queues.get(message.guild.id)
@@ -136,11 +130,14 @@ class PlayCommand(Command):
                 # Remove buttons from old message
                 await self._remove_old_buttons(message.guild.id)
                 
+                # Create control view with button states
+                control_view = MusicControlView(guild_id=message.guild.id)
+                
                 # Send appropriate message
                 if queue_length == 0:
                     new_msg = await search_msg.edit(
                         content=f"🎵 Now playing: **{song.title}** [{song.duration}]\nRequested by: {song.requested_by}",
-                        view=self.music_control_view
+                        view=control_view
                     )
                     # Store the new message with buttons
                     queue = music_service.queues.get(message.guild.id)
@@ -149,7 +146,7 @@ class PlayCommand(Command):
                 else:
                     new_msg = await search_msg.edit(
                         content=f"✅ Added to queue (Position #{queue_length + 1}): **{song.title}** [{song.duration}]",
-                        view=self.music_control_view
+                        view=control_view
                     )
                     # Store the new message with buttons
                     queue = music_service.queues.get(message.guild.id)

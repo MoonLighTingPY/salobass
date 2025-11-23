@@ -1,13 +1,14 @@
-"""Queue command - displays the current music queue."""
+"""Queue command - displays the current music queue with pagination."""
 
 from typing import List
 import discord
 from commands.base_command import Command
 from music_service import music_service
+from music_controls import QueuePaginationView
 
 
 class QueueCommand(Command):
-    """Command that displays the current music queue."""
+    """Command that displays the current music queue with pagination."""
     
     def __init__(self):
         super().__init__("queue", "Displays the current music queue")
@@ -24,18 +25,8 @@ class QueueCommand(Command):
             await message.reply("📜 Queue is empty!")
             return
         
-        # Build queue message
-        queue_text = "**🎵 Current Queue:**\n\n"
+        # Create pagination view
+        view = QueuePaginationView(message.guild.id, page=0)
+        content = view.get_page_content()
         
-        # Show first 10 songs
-        for i, song in enumerate(queue[:10], 1):
-            status = "🎵 Now Playing" if i == 1 else f"#{i}"
-            queue_text += f"{status}: **{song.title}** [{song.duration}]"
-            if song.requested_by:
-                queue_text += f" - *{song.requested_by}*"
-            queue_text += "\n"
-        
-        if len(queue) > 10:
-            queue_text += f"\n*...and {len(queue) - 10} more songs*"
-        
-        await message.reply(queue_text)
+        await message.reply(content, view=view)
