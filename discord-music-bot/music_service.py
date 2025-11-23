@@ -36,6 +36,8 @@ class GuildQueue:
         self.last_control_message: Optional[discord.Message] = None  # Track last message with buttons
         self.loop_mode: str = "off"  # "off", "song", or "queue"
         self.ffmpeg_process = None  # Track FFmpeg process
+        self.progress_task: Optional[asyncio.Task] = None  # Track progress update task
+        self.pause_time: Optional[float] = None  # Track when playback was paused
 
 
 class MusicService:
@@ -77,6 +79,79 @@ class MusicService:
             'options': '-vn -b:a 128k'  # Set audio bitrate for consistent streaming
         }
     
+    def _create_progress_bar(self, current: int, total: int, length: int = 20) -> str:
+        """Create a visual progress bar."""
+        if total == 0:
+            return "░" * length
+        
+        filled = int((current / total) * length)
+        bar = "█" * filled + "░" * (length - filled)
+        return bar
+    
+    def _format_duration(self, seconds: int) -> str:
+        """Format duration in seconds to HH:MM:SS or MM:SS format."""
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        
+        if hours > 0:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes}:{secs:02d}"
+    
+    async def _update_progress_bar(self, guild_id: int) -> None:
+        """Update the progress bar in the control message every few seconds."""
+        queue = self.queues.get(guild_id)
+        if not queue:
+            return
+        
+        try:
+            # Show initial 00:00 immediately
+            await asyncio.sleep(0.1)
+            
+            while queue.is_playing and queue.current_song:
+                # Update more frequently for smoother progress
+                await asyncio.sleep(2)
+                
+                # Check if we should continue updating
+                if not queue.is_playing or not queue.current_song or not queue.last_control_message:
+                    break
+                
+                # Get current position
+                current_pos = self.get_current_position(guild_id)
+                song = queue.current_song
+                
+                # Create progress bar
+                progress_bar = self._create_progress_bar(current_pos, song.duration_seconds)
+                time_display = f"{self._format_duration(current_pos)} / {song.duration}"
+                
+                # Build updated content
+                status = "⏸️ Paused" if queue.is_paused else "▶️ Playing"
+                loop_emoji = "🔂" if queue.loop_mode == "song" else "🔁" if queue.loop_mode == "queue" else ""
+                loop_text = f" {loop_emoji}" if loop_emoji else ""
+                
+                content = (
+                    f"🎵 Now playing: **{song.title}** [{song.duration}]\n"
+                    f"Requested by: {song.requested_by}\n\n"
+                    f"{progress_bar} {time_display}\n"
+                    f"{status}{loop_text}"
+                )
+                
+                # Try to update the message
+                try:
+                    await queue.last_control_message.edit(content=content)
+                except discord.NotFound:
+                    # Message was deleted, stop updating
+                    break
+                except discord.HTTPException as e:
+                    print(f"Failed to update progress bar: {e}")
+                    # Continue trying on next iteration
+                
+        except asyncio.CancelledError:
+            # Task was cancelled, clean up
+            pass
+        except Exception as e:
+            print(f"Error in progress bar update: {e}")
+
     def _get_cached_metadata(self, url: str) -> Optional[dict]:
         """Get cached metadata if available and not expired."""
         if url in self._metadata_cache:
@@ -306,14 +381,22 @@ class MusicService:
             if queue:
                 queue.is_playing = False
                 self._cleanup_ffmpeg(guild_id)
+                # Cancel progress task if exists
+                if queue.progress_task and not queue.progress_task.done():
+                    queue.progress_task.cancel()
             return
         
         # Clean up any existing FFmpeg process
         self._cleanup_ffmpeg(guild_id)
         
+        # Cancel previous progress task if exists
+        if queue.progress_task and not queue.progress_task.done():
+            queue.progress_task.cancel()
+        
         song = queue.songs[0]
         queue.current_song = song
         queue.is_playing = True
+        queue.pause_time = None
         song.start_time = time.time()  # Record start time
         
         try:
@@ -335,10 +418,16 @@ class MusicService:
             if hasattr(source, '_process'):
                 queue.ffmpeg_process = source._process
             
+            # Start progress bar update task
+            queue.progress_task = asyncio.create_task(self._update_progress_bar(guild_id))
+            
             # Play the audio
             def after_playing(error):
                 if error:
                     print(f"Error playing song: {error}")
+                # Cancel progress task
+                if queue.progress_task and not queue.progress_task.done():
+                    queue.progress_task.cancel()
                 # Clean up FFmpeg
                 self._cleanup_ffmpeg(guild_id)
                 # Schedule the next song
@@ -349,6 +438,8 @@ class MusicService:
         except Exception as e:
             print(f"Error playing song: {e}")
             self._cleanup_ffmpeg(guild_id)
+            if queue.progress_task and not queue.progress_task.done():
+                queue.progress_task.cancel()
             queue.songs.pop(0)
             await self._play_song(guild_id)
     
@@ -456,9 +547,10 @@ class MusicService:
         if not queue or not queue.current_song or not queue.current_song.start_time:
             return 0
         
-        if queue.is_paused:
-            # Return position at pause time (would need to track pause time separately for accuracy)
-            return 0
+        if queue.is_paused and queue.pause_time:
+            # Return position at pause time
+            elapsed = int(queue.pause_time - queue.current_song.start_time)
+            return min(elapsed, queue.current_song.duration_seconds)
         
         elapsed = int(time.time() - queue.current_song.start_time)
         return min(elapsed, queue.current_song.duration_seconds)
@@ -503,6 +595,7 @@ class MusicService:
         if queue.voice_client.is_playing() and not queue.is_paused:
             queue.voice_client.pause()
             queue.is_paused = True
+            queue.pause_time = time.time()  # Record pause time
             return True
         
         return False
@@ -523,8 +616,14 @@ class MusicService:
             return False
         
         if queue.voice_client.is_paused() and queue.is_paused:
+            # Adjust start time to account for pause duration
+            if queue.pause_time and queue.current_song.start_time:
+                pause_duration = time.time() - queue.pause_time
+                queue.current_song.start_time += pause_duration
+            
             queue.voice_client.resume()
             queue.is_paused = False
+            queue.pause_time = None
             return True
         
         return False
@@ -563,28 +662,6 @@ class MusicService:
         
         return True
     
-    def clear_queue(self, guild_id: int) -> int:
-        """
-        Clear the entire queue (except current song).
-        
-        Args:
-            guild_id: ID of the guild
-            
-        Returns:
-            Number of songs removed from queue
-        """
-        queue = self.queues.get(guild_id)
-        
-        if not queue:
-            return 0
-        
-        # Keep only the first song (currently playing)
-        queue_length = len(queue.songs) - 1
-        if queue_length > 0:
-            queue.songs = queue.songs[:1]
-        
-        return max(0, queue_length)
-    
     def clear_and_stop(self, guild_id: int) -> int:
         """
         Clear the entire queue and stop playback completely.
@@ -603,6 +680,10 @@ class MusicService:
         # Count songs to be cleared
         queue_length = len(queue.songs)
         
+        # Cancel progress task
+        if queue.progress_task and not queue.progress_task.done():
+            queue.progress_task.cancel()
+        
         # Stop playback
         if queue.voice_client.is_playing() or queue.voice_client.is_paused():
             queue.voice_client.stop()
@@ -615,6 +696,7 @@ class MusicService:
         queue.is_playing = False
         queue.is_paused = False
         queue.current_song = None
+        queue.pause_time = None
         
         return queue_length
     
@@ -630,24 +712,6 @@ class MusicService:
         """
         queue = self.queues.get(guild_id)
         return queue.songs if queue else []
-    
-    def _format_duration(self, seconds: int) -> str:
-        """
-        Format duration in seconds to HH:MM:SS or MM:SS format.
-        
-        Args:
-            seconds: Duration in seconds
-            
-        Returns:
-            Formatted duration string
-        """
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        secs = seconds % 60
-        
-        if hours > 0:
-            return f"{hours}:{minutes:02d}:{secs:02d}"
-        return f"{minutes}:{secs:02d}"
 
 
 # Singleton instance

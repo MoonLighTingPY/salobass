@@ -12,21 +12,6 @@ class NowPlayingCommand(Command):
     def __init__(self):
         super().__init__("nowplaying", "Displays the currently playing song")
     
-    def _create_progress_bar(self, current: int, total: int, length: int = 20) -> str:
-        """Create a visual progress bar."""
-        if total == 0:
-            return "░" * length
-        
-        filled = int((current / total) * length)
-        bar = "█" * filled + "░" * (length - filled)
-        return bar
-    
-    def _format_time(self, seconds: int) -> str:
-        """Format seconds to MM:SS."""
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02d}"
-    
     async def execute(self, message: discord.Message, args: List[str]) -> None:
         """Execute the nowplaying command."""
         if not message.guild:
@@ -54,8 +39,8 @@ class NowPlayingCommand(Command):
             embed.set_thumbnail(url=song.thumbnail)
         
         # Add progress bar
-        progress_bar = self._create_progress_bar(current_pos, song.duration_seconds)
-        time_display = f"{self._format_time(current_pos)} / {song.duration}"
+        progress_bar = music_service._create_progress_bar(current_pos, song.duration_seconds)
+        time_display = f"{music_service._format_duration(current_pos)} / {song.duration}"
         
         embed.add_field(
             name="Progress",
