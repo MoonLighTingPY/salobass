@@ -27,6 +27,7 @@ class GuildQueue:
         self.current_song: Optional[Song] = None
         self.is_paused = False
         self.history: List[Song] = []  # Track previous songs
+        self.last_control_message: Optional[discord.Message] = None  # Track last message with buttons
 
 
 class MusicService:
