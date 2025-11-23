@@ -8,7 +8,8 @@ A simple Discord music bot written in Python that can play music from YouTube in
 - ⏭️ Skip current song
 - 📝 Queue management
 - 🔊 High-quality audio playback
-- 💬 Echo command for testing
+- 💬 AI-powered chat with conversation history
+- 🤖 Powered by Groq AI (llama-3.1-8b-instant)
 
 ## Prerequisites
 
@@ -65,9 +66,12 @@ sudo apt install ffmpeg
    - Add your Discord bot token to the `.env` file:
    ```
    DISCORD_TOKEN=your_discord_bot_token_here
+   GROQ_API_KEY=your_groq_api_key_here
    ```
 
-## Getting a Discord Bot Token
+## Getting API Keys
+
+### Discord Bot Token
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
 2. Click "New Application" and give it a name
@@ -77,6 +81,16 @@ sudo apt install ffmpeg
 6. Enable these Privileged Gateway Intents:
    - Message Content Intent
    - Server Members Intent (optional)
+
+### Groq API Key (for AI chat feature)
+
+1. Go to [Groq Console](https://console.groq.com/)
+2. Sign up or log in
+3. Navigate to [API Keys](https://console.groq.com/keys)
+4. Click "Create API Key"
+5. Copy the API key and add it to your `.env` file
+
+**Note:** The chat feature is optional. If you don't provide a GROQ_API_KEY, the bot will still work but the chat command will be disabled.
 
 ## Inviting the Bot to Your Server
 
@@ -111,6 +125,9 @@ All commands start with the prefix `s!`
 |---------|-------------|-------|
 | `s!play <query>` | Play a song from YouTube | `s!play never gonna give you up` |
 | `s!skip` | Skip the current song | `s!skip` |
+| `s!chat <message>` | Chat with the AI assistant | `s!chat Hello!` |
+| `s!chat clear` | Clear your conversation history | `s!chat clear` |
+| `s!chat help` | Show chat command help | `s!chat help` |
 | `s!echo <text>` | Echo back the provided text | `s!echo Hello World` |
 
 ### Examples
@@ -119,8 +136,20 @@ All commands start with the prefix `s!`
 s!play https://www.youtube.com/watch?v=dQw4w9WgXcQ
 s!play never gonna give you up
 s!skip
+s!chat What's the weather like?
+s!chat Tell me a joke
+s!chat clear
 s!echo Hello, Discord!
 ```
+
+### Chat Feature
+
+The chat command allows you to have conversations with an AI assistant powered by Groq:
+
+- **Conversation Memory**: The AI remembers your last 10 messages
+- **Per-User History**: Each user has their own conversation history
+- **Fast Responses**: Uses the llama-3.1-8b-instant model for quick replies
+- **Clear History**: Use `s!chat clear` to start a fresh conversation
 
 ## Project Structure
 
@@ -128,12 +157,15 @@ s!echo Hello, Discord!
 discord-music-bot/
 ├── bot.py                      # Main bot entry point
 ├── music_service.py            # Music playback and queue management
+├── ai_service.py               # AI service using Groq API
+├── chat_logic.py               # Conversation history management
 ├── requirements.txt            # Python dependencies
 ├── .env                        # Environment variables (create from .env.example)
 ├── .env.example               # Example environment file
 └── commands/
     ├── base_command.py        # Base command interface
     ├── command_handler.py     # Command registry and handler
+    ├── chat.py                # Chat command
     ├── echo.py                # Echo command
     ├── play.py                # Play command
     └── skip.py                # Skip command
@@ -146,6 +178,7 @@ discord-music-bot/
 - **PyNaCl** - Audio encryption for Discord voice
 - **python-dotenv** - Environment variable management
 - **aiohttp** - Async HTTP client
+- **groq** - Groq AI API client for chat functionality
 
 ## Troubleshooting
 

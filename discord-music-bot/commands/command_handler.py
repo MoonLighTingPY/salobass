@@ -14,6 +14,7 @@ from commands.help import HelpCommand
 from commands.nowplaying import NowPlayingCommand
 from commands.loop import LoopCommand
 from commands.shuffle import ShuffleCommand
+from commands.chat import ChatCommand
 
 
 # Command prefix
@@ -47,6 +48,7 @@ def register_commands() -> None:
         NowPlayingCommand(),
         LoopCommand(),
         ShuffleCommand(),
+        ChatCommand(),
     ]
     
     for cmd in command_instances:

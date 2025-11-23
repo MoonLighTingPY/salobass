@@ -36,8 +36,8 @@ class GuildQueue:
         self.last_control_message: Optional[discord.Message] = None  # Track last message with buttons
         self.loop_mode: str = "off"  # "off", "song", or "queue"
         self.ffmpeg_process = None  # Track FFmpeg process
-        self.progress_task: Optional[asyncio.Task] = None  # Track progress update task
-        self.pause_time: Optional[float] = None  # Track when playback was paused
+        self.progress_task: Optional[asyncio.Task] = None
+        self.pause_time: Optional[float] = None  # 
 
 
 class MusicService:
@@ -46,9 +46,9 @@ class MusicService:
     def __init__(self):
         self.queues: Dict[int, GuildQueue] = {}
         self._metadata_cache: Dict[str, Tuple[dict, float]] = {}  # url -> (metadata, timestamp)
-        self._cache_ttl = 3600  # Cache for 1 hour
+        self._cache_ttl = 3600  # cache for 1 hour
         
-        # yt-dlp options for streaming (no download)
+        # streaming only
         self.ydl_opts = {
             'format': 'bestaudio/best',
             'noplaylist': True,
@@ -61,11 +61,11 @@ class MusicService:
             'source_address': '0.0.0.0',
         }
         
-        # yt-dlp options for playlists
+        # playlists
         self.ydl_playlist_opts = {
             'format': 'bestaudio/best',
             'noplaylist': False,
-            'extract_flat': True,  # Don't download, just get metadata
+            'extract_flat': True,  # metadata only (list extraction)
             'nocheckcertificate': True,
             'ignoreerrors': True,
             'logtostderr': False,
@@ -76,7 +76,7 @@ class MusicService:
         
         self.ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-            'options': '-vn -b:a 128k'  # Set audio bitrate for consistent streaming
+            'options': '-vn -b:a 128k'  #@TODO only fixed bitrate works, fuckass copro enjoyer yt-dlp cant handle dynamic bitrate. this makes it load slower so 
         }
     
     def _create_progress_bar(self, current: int, total: int, length: int = 20) -> str:
