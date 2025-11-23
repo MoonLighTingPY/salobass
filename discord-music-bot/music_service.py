@@ -427,6 +427,36 @@ class MusicService:
         
         return max(0, queue_length)
     
+    def clear_and_stop(self, guild_id: int) -> int:
+        """
+        Clear the entire queue and stop playback completely.
+        
+        Args:
+            guild_id: ID of the guild
+            
+        Returns:
+            Number of songs removed from queue
+        """
+        queue = self.queues.get(guild_id)
+        
+        if not queue:
+            return 0
+        
+        # Count songs to be cleared
+        queue_length = len(queue.songs)
+        
+        # Stop playback
+        if queue.voice_client.is_playing() or queue.voice_client.is_paused():
+            queue.voice_client.stop()
+        
+        # Clear the queue completely
+        queue.songs.clear()
+        queue.is_playing = False
+        queue.is_paused = False
+        queue.current_song = None
+        
+        return queue_length
+    
     def get_queue(self, guild_id: int) -> List[Song]:
         """
         Get the queue for a guild.

@@ -66,15 +66,15 @@ class MusicControlView(discord.ui.View):
     
     @discord.ui.button(emoji="🗑️", style=discord.ButtonStyle.danger, custom_id="music:clear")
     async def clear_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Button to clear the queue."""
+        """Button to clear the queue and stop playback."""
         if not interaction.guild:
             await interaction.response.send_message("❌ This command can only be used in a server!", ephemeral=True)
             return
         
-        cleared = music_service.clear_queue(interaction.guild.id)
+        cleared = music_service.clear_and_stop(interaction.guild.id)
         
         if cleared > 0:
-            await interaction.response.send_message(f"🗑️ Cleared {cleared} song(s) from the queue!", ephemeral=True)
+            await interaction.response.send_message(f"🗑️ Cleared {cleared} song(s) from the queue and stopped playback!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Queue is already empty!", ephemeral=True)
     

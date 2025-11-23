@@ -5,6 +5,12 @@ from commands.base_command import Command
 from commands.echo import EchoCommand
 from commands.play import PlayCommand
 from commands.skip import SkipCommand
+from commands.pause import PauseCommand
+from commands.next import NextCommand
+from commands.prev import PrevCommand
+from commands.clear import ClearCommand
+from commands.queue import QueueCommand
+from commands.help import HelpCommand
 
 
 # Command prefix
@@ -20,6 +26,12 @@ def register_commands() -> None:
         EchoCommand(),
         PlayCommand(),
         SkipCommand(),
+        PauseCommand(),
+        NextCommand(),
+        PrevCommand(),
+        ClearCommand(),
+        QueueCommand(),
+        HelpCommand(),
     ]
     
     for cmd in command_instances:
