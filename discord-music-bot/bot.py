@@ -3,6 +3,7 @@
 import os
 import discord
 from discord.ext import commands as discord_commands
+from discord.ext import voice_recv
 from dotenv import load_dotenv
 from commands.command_handler import register_commands, get_command, PREFIX
 
@@ -14,9 +15,22 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
 intents.guilds = True
+intents.members = True  # Required for voice receive
 
-# Create bot instance
-bot = discord_commands.Bot(command_prefix=PREFIX, intents=intents, help_command=None)
+# Create bot instance with voice receive support
+bot = discord_commands.Bot(
+    command_prefix=PREFIX, 
+    intents=intents, 
+    help_command=None
+)
+
+# Override the default voice client class to support receiving
+class VoiceRecvClient(voice_recv.VoiceRecvClient):
+    """Custom voice client with receive support."""
+    pass
+
+# Register the custom voice client
+discord.VoiceClient.warn_nacl = False
 
 
 @bot.event
@@ -57,6 +71,8 @@ async def on_message(message: discord.Message):
         await command.execute(message, args)
     except Exception as e:
         print(f"Error executing command {command_name}: {e}")
+        import traceback
+        traceback.print_exc()
         await message.reply("There was an error executing that command!")
 
 

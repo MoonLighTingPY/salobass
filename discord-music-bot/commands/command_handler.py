@@ -15,6 +15,8 @@ from commands.nowplaying import NowPlayingCommand
 from commands.loop import LoopCommand
 from commands.shuffle import ShuffleCommand
 from commands.chat import ChatCommand
+from commands.voice_assistant import VoiceAssistantCommand
+from commands.join import JoinCommand
 
 
 # Command prefix
@@ -30,6 +32,8 @@ aliases: Dict[str, str] = {
     "n": "next",
     "np": "nowplaying",
     "q": "queue",
+    "v": "voice",
+    "j": "join",  # Add this line
 }
 
 
@@ -49,6 +53,8 @@ def register_commands() -> None:
         LoopCommand(),
         ShuffleCommand(),
         ChatCommand(),
+        VoiceAssistantCommand(),
+        JoinCommand(),  # Add this line
     ]
     
     for cmd in command_instances:

@@ -1,6 +1,7 @@
 """AI service for chatbot functionality using Groq."""
 
 import os
+import asyncio
 from typing import Optional
 from groq import Groq
 from dotenv import load_dotenv
@@ -57,12 +58,16 @@ class AIService:
             
             chat_messages.extend(messages)
             
-            # Get completion from Groq
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                messages=chat_messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+            # Run the blocking Groq call in a thread pool to avoid blocking the event loop
+            loop = asyncio.get_event_loop()
+            completion = await loop.run_in_executor(
+                None,
+                lambda: self.client.chat.completions.create(
+                    model=self.model,
+                    messages=chat_messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                )
             )
             
             return completion.choices[0].message.content
