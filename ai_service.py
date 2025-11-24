@@ -24,9 +24,9 @@ class AIService:
         try:
             self.client = Groq(api_key=self.api_key)
             # Using llama-3.1-8b-instant for fast responses
-            self.model = "llama-3.1-8b-instant"
-            self.max_tokens = 1024
-            self.temperature = 0.7
+            self.model = "openai/gpt-oss-20b"
+            self.max_tokens = 2048
+            self.temperature = 1
             print("✅ AI service initialized successfully")
         except Exception as e:
             print(f"❌ Error initializing AI service: {e}")

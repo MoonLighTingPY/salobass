@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+*.log
+*.swp
+*.swo
+node_modules/
+dist/
+venv/
+.env
