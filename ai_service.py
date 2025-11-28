@@ -24,7 +24,7 @@ class StreamingAIService:
         try:
             self.client = Groq(api_key=self.api_key)
             # Using llama-3.1-8b-instant for fast responses
-            self.model = "llama-3.1-8b-instant"
+            self.model = "llama-3.3-70b-versatile"
             self.max_tokens = 2048
             self.temperature = 1
             print("✅ Streaming AI service initialized successfully")
@@ -159,26 +159,33 @@ class StreamingAIService:
         """
         response_parts = []
         sentence_buffer = ""
-        sentence_endings = ('.', '!', '?', ':', ';', '\n')
+        sentence_endings = ('.', '!', '?')
+        sentences_batch = []  # Collect multiple sentences
+        target_batch_length = 100  # Target length for each speech chunk
         
         async for chunk in self.get_streaming_response(messages, system_prompt):
             response_parts.append(chunk)
             sentence_buffer += chunk
             
-            # Check for sentence endings
             for ending in sentence_endings:
                 if ending in sentence_buffer:
-                    # Split by the ending, keeping the ending
                     parts = sentence_buffer.split(ending)
                     for i, part in enumerate(parts[:-1]):
                         sentence = part.strip() + ending
                         if sentence.strip():
-                            await on_sentence(sentence.strip())
+                            sentences_batch.append(sentence.strip())
+                            
+                            # Send batch when it reaches target length
+                            batch_text = " ".join(sentences_batch)
+                            if len(batch_text) >= target_batch_length:
+                                await on_sentence(batch_text)
+                                sentences_batch = []
                     
-                    # Keep the incomplete part for the next iteration
                     sentence_buffer = parts[-1]
         
-        # Handle any remaining text
+        # Handle remaining sentences
+        if sentences_batch:
+            await on_sentence(" ".join(sentences_batch))
         if sentence_buffer.strip():
             await on_sentence(sentence_buffer.strip())
         
