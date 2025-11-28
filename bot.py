@@ -6,9 +6,13 @@ from discord.ext import commands as discord_commands
 from discord.ext import voice_recv
 from dotenv import load_dotenv
 from commands.command_handler import register_commands, get_command, PREFIX
+import logging
 
 # Load environment variables
 load_dotenv()
+
+# Suppress RTCP packet warnings
+logging.getLogger('discord.ext.voice_recv.reader').setLevel(logging.WARNING)
 
 # Bot setup with required intents
 intents = discord.Intents.default()
